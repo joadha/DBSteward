@@ -503,13 +503,26 @@ class mysql5 extends sql99 {
           else {
             $node_index = $node_table->addChild('index');
             $node_index['name'] = $db_index->index_name;
-            $node_index['using'] = strtolower($db_index->index_type);
-            $node_index['unique'] = $db_index->unique ? 'true' : 'false';
+						
+            // "fulltext" and "spatial" appear at the beggining of the index decl. see http://dev.mysql.com/doc/refman/5.0/en/create-table.html
+            if ( strcasecmp($db_index->index_type, 'fulltext') !== 0 && strcasecmp($db_index->index_type, 'spatial') !== 0 ) {
+              $node_index['using'] = strtolower($db_index->index_type);
+            } 
+            else {
+              $node_index['type'] = strtolower($db_index->index_type);
+            }
+            if ( $db_index->unique ) {
+              $node_index['type'] = 'unique';
+            }
 
-            $i = 1;
+            $i = 0;
             foreach ( $db_index->columns as $column_name ) {
-              $node_index->addChild('indexDimension', $column_name)
-                ->addAttribute('name', $column_name . '_' . $i++);
+              $node_child = $node_index->addChild('indexDimension', $column_name);
+              $node_child->addAttribute('name', $column_name . '_' . ($i+1) );
+              if ($db_index->sub_parts[$i] > 0) {
+                $node_child->addAttribute('prefixLength', $db_index->sub_parts[$i]);
+              }
+              $i++;
             }
           }
         }
