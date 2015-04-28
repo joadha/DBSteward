@@ -34,12 +34,12 @@ class mysql5_index extends sql99_index {
 
     // add column unique indexes and column fkeys to the list
     foreach ($node_table->column AS $column) {
-      if (isset($column['unique']) && strcasecmp($column['unique'], 'true') == 0) {
+      if (isset($column['type']) && strcasecmp($column['type'], 'unique') == 0) {
         $unique_index = new SimpleXMLElement('<index/>');
         // For MySQL unique indexes, this is as simple as the column name: http://dev.mysql.com/doc/refman/5.5/en/create-table.html (third of the way down the page)
         // duplicate index names get a suffix: _2, _3, _4
         $unique_index['name'] = static::get_index_name($column['name'], $nodes);
-        $unique_index['unique'] = 'true';
+        $unique_index['type'] = 'unique';
         $unique_index['using'] = 'btree';
         $unique_index->addChild('indexDimension', $column['name'])
           ->addAttribute('name', $column['name'] . '_unq');
@@ -66,7 +66,6 @@ class mysql5_index extends sql99_index {
           $fkey_index['name'] = (string)$column['foreignIndexName'] 
                               ?: (string)$column['foreignKeyName']
                               ?: static::get_index_name((string)$column['name'], $nodes);
-          $fkey_index['unique'] = 'false';
           $fkey_index['using'] = 'btree';
           $fkey_index->addChild('indexDimension', (string)$column['name'])
                      ->addAttribute('name', $column['name'].'_1');
@@ -120,8 +119,8 @@ class mysql5_index extends sql99_index {
     $index_note = "-- note that MySQL does not support indexed expressions or named dimensions\n";
     $sql = "CREATE ";
 
-    if ( isset($node_index['unique']) && strcasecmp($node_index['unique'], 'true') == 0 ) {
-      $sql .= "UNIQUE ";
+    if ( !empty($node_index['type']) ) {
+      $sql .=  self::get_index_type_sql($node_index['type']).' ';
     }
 
     $sql .= "INDEX "
@@ -154,16 +153,17 @@ class mysql5_index extends sql99_index {
    */
   public static function get_alter_add_sql($node_schema, $node_table, $node_index) {
     $dimensions = static::get_dimension_list($node_schema, $node_table, $node_index);
-    $unique = '';
-    if ( isset($node_index['unique']) && strcasecmp($node_index['unique'], 'true') == 0 ) {
-      $unique = 'UNIQUE ';
+
+    $type = '';
+    if ( !empty($node_index['type']) ) {
+      $type = static::get_index_type_sql($node_index['type']).' ';
     }
 
     $using = '';
     if ( !empty($node_index['using']) ) {
       $using = ' USING ' . static::get_using_option_sql($node_index['using']);
     }
-    return 'ADD ' . $unique . 'INDEX ' . mysql5::get_quoted_object_name($node_index['name']) . ' (' . implode(', ', $dimensions) . ')' . $using;
+    return 'ADD ' . $type . 'INDEX ' . mysql5::get_quoted_object_name($node_index['name']) . ' (' . implode(', ', $dimensions) . ')' . $using;
   }
 
   /**
@@ -179,13 +179,17 @@ class mysql5_index extends sql99_index {
 
   protected static function get_dimension_list($node_schema, $node_table, $node_index) {
     $dimensions = array();
+
     foreach ( $node_index->indexDimension as $dimension ) {
       // mysql only supports indexed columns, not indexed expressions like in pgsql or mssql
       if ( ! mysql5_table::contains_column($node_table, $dimension) ) {
         throw new Exception("Table " . mysql5::get_fully_qualified_table_name($node_schema['name'], $node_table['name']) . " does not contain column '$dimension'");
       }
 
-      $dimensions[] = mysql5::get_quoted_column_name($dimension);
+      $quoted_name = mysql5::get_quoted_column_name($dimension);
+      $paren_prefix =  ( $dimension['prefixLength'] > 0 ? '('.$dimension['prefixLength'].')' : NULL );
+
+      $dimensions[] = $quoted_name.$paren_prefix;
     }
     return $dimensions;
   }
@@ -202,6 +206,23 @@ class mysql5_index extends sql99_index {
       default:
         dbsteward::console_line(1, "MySQL does not support the $using index type, defaulting to BTREE");
         return 'BTREE';
+        break;
+    }
+  }
+
+  public static function get_index_type_sql($type) {
+    $type = strtoupper((string)$type);
+
+    switch ( $type ) {
+      case 'UNIQUE':
+      case 'SPATIAL':
+      case 'FULLTEXT':
+        return $type;
+        break;
+
+      default:
+        dbsteward::console_line(1, "MySQL does not support the $type index type, defaulting to ''");
+        return '';
         break;
     }
   }
