@@ -207,8 +207,13 @@ class mysql5_db {
 
   public function get_indices($db_table) {
     // only show those indexes which are not keys/constraints, unless it's a unique constraint
-    $indices = $this->query("SELECT statistics.table_name,
-                                          GROUP_CONCAT(DISTINCT statistics.column_name ORDER BY seq_in_index) AS columns,
+
+    // JAH: "sub_parts" are prefix lengths. Note the COALESCE(... , 0) which handles the lack of a 'sub_part' (prefix length). 
+    //       This was needed to keep "sub_parts" aligned with "columns" so we can associate their members during sql generation.
+    $indices = $this->query("
+		SELECT statistics.table_name,
+                                          GROUP_CONCAT(statistics.column_name ORDER BY seq_in_index) AS columns,
+                                          GROUP_CONCAT(COALESCE(statistics.sub_part,0) ORDER BY seq_in_index) AS sub_parts,
                                           NOT statistics.non_unique AS 'unique', statistics.index_name,
                                           statistics.nullable, statistics.comment, statistics.index_type
                                    FROM statistics
@@ -220,6 +225,7 @@ class mysql5_db {
     foreach ($indices as &$idx) {
       // massage the output
       $idx->columns = explode(',',$idx->columns);
+      $idx->sub_parts = explode(',',$idx->sub_parts);
     }
 
     return $indices;
