@@ -208,11 +208,13 @@ class mysql5_db {
   public function get_indices($db_table) {
     // only show those indexes which are not keys/constraints, unless it's a unique constraint
 
-    // JAH: "sub_parts" are prefix lengths. Note the COALESCE(... , 0) which handles the lack of a 'sub_part' (prefix length). 
-    //       This was needed to keep "sub_parts" aligned with "columns" so we can associate their members during sql generation.
+    // JAH:  "sub_parts" are prefix lengths. Note the COALESCE(... , 0) which handles the lack of a 'sub_part' (prefix length):
+    //       This was needed to keep "sub_parts" aligned with "columns" so we can cross-reference the latter with the former
+    //       during SQL generation. TODO this is still pending a little research into whether mulitiple contraints excluding 
+    //       PK and FK can relate to back to the same index name 
     $indices = $this->query("
 		SELECT statistics.table_name,
-                                          GROUP_CONCAT(statistics.column_name ORDER BY seq_in_index) AS columns,
+                                          GROUP_CONCAT(DISTINCT(statistics.column_name) ORDER BY seq_in_index) AS columns,
                                           GROUP_CONCAT(COALESCE(statistics.sub_part,0) ORDER BY seq_in_index) AS sub_parts,
                                           NOT statistics.non_unique AS 'unique', statistics.index_name,
                                           statistics.nullable, statistics.comment, statistics.index_type
@@ -221,6 +223,8 @@ class mysql5_db {
                                      LEFT OUTER JOIN table_constraints USING (table_schema, table_name, constraint_name)
                                    WHERE statistics.table_schema = ?
                                      AND statistics.table_name = ?
+                                     AND table_constraints.constraint_type NOT IN ('PRIMARY KEY','FOREIGN KEY')
+
                                    GROUP BY index_name", array($this->dbname, $db_table->table_name));
     foreach ($indices as &$idx) {
       // massage the output
