@@ -9,6 +9,9 @@
  */
 
 class mysql5_trigger extends sql99_trigger {
+
+  const ALT_DELIMITER = '$_$';
+
   public static function get_creation_sql($node_schema, $node_trigger) {
     $events = self::get_events($node_trigger);
 
@@ -49,6 +52,11 @@ class mysql5_trigger extends sql99_trigger {
 
     // always drop triggers before creating them
     $ddl = static::get_drop_sql($node_schema, $node_trigger);
+
+    if ( mysql5::$swap_function_delimiters ) {
+      $ddl .= 'DELIMITER ' . static::ALT_DELIMITER . "\n";
+    }
+
     $single = count($events) == 1;
     foreach ( $events as $event ) {
       if ( ! ($event = self::validate_event($event)) ) {
@@ -61,6 +69,10 @@ class mysql5_trigger extends sql99_trigger {
       if ( substr($trigger_fn, -1) != ';' ) {
         $trigger_fn .= ';';
       }
+      if ( mysql5::$swap_function_delimiters ) {
+        $trigger_fn .= static::ALT_DELIMITER . "\nDELIMITER ;";
+      }
+
       $ddl .= <<<SQL
 CREATE TRIGGER $trigger_name $when $event ON $table_name
 FOR EACH ROW $trigger_fn
